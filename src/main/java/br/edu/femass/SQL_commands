@@ -1,0 +1,78 @@
+
+Cria trigger para atualizar estoque de compra:
+CREATE OR REPLACE FUNCTION
+    func_att_estoque() RETURNS TRIGGER
+    LANGUAGE plpgsql
+AS $$
+    BEGIN
+        UPDATE perfume
+        SET estoque = estoque + (NEW.quantidade)
+        WHERE id = NEW.perfume;
+        RETURN NEW;
+    END;
+    $$;
+
+CREATE TRIGGER trg_att_estoque AFTER INSERT ON detalhe_compra
+    FOR EACH ROW EXECUTE PROCEDURE func_att_estoque();
+........................................................................................................................
+
+Cria trigger para atualizar estoque de venda com restrição de estoque negativo:
+CREATE OR REPLACE FUNCTION
+    func_att_estoque_venda() RETURNS TRIGGER
+    LANGUAGE plpgsql
+AS $$
+BEGIN
+    UPDATE perfume
+    SET estoque = estoque - (NEW.quantidade)
+    WHERE id = NEW.perfume AND
+          estoque >= NEW.quantidade;
+    if not found then
+        raise 'Estoque insuficiente';
+    end if;
+    RETURN NEW;
+END; $$;
+
+CREATE TRIGGER trg_att_estoque_venda BEFORE INSERT ON detalhe_venda
+    FOR EACH ROW EXECUTE PROCEDURE func_att_estoque_venda();
+........................................................................................................................
+
+select * from venda where data_venda = current_date;
+select * from compra where data_compra = current_date;
+select current_date;
+select now();
+
+........................................................................................................................
+
+Select de compras e detalhes da mesma realizadas no dia:
+select
+    c.nr_pedido as pedido,
+    c.data_compra as data,
+    p.nome as perfume,
+    dc.quantidade as qtd,
+    dc.preco_compra as preco,
+    (dc.preco_compra * dc.quantidade) as total
+
+    from compra c inner join detalhe_compra dc on c.nr_pedido = dc.pedido
+    inner join perfume p on dc.perfume = p.id
+    where c.data_compra = current_date
+
+    group by nr_pedido, p.nome, dc.quantidade, dc.preco_compra
+    order by nr_pedido;
+........................................................................................................................
+
+Select valor total em reais de vendas feitas no dia:
+select
+    '0' as pedido,
+    SUM (dv.quantidade*dv.preco_venda) as total
+from venda c inner join detalhe_venda dv on c.nr_pedido = dv.pedido
+where c.data_venda = current_date
+
+UNION ALL
+
+select
+    c.nr_pedido as pedido,
+    SUM (dv.quantidade*dv.preco_venda) as total
+from venda c inner join detalhe_venda dv on c.nr_pedido = dv.pedido
+where c.data_venda = current_date
+and nr_pedido = 0
+group by c.nr_pedido
